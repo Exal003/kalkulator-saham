@@ -1,36 +1,27 @@
-KALKULATOR SAHAM PWA v1.0.0
+KALKULATOR SAHAM PWA v1.1.0
 
-Isi folder:
-- index.html: aplikasi utama
-- download.html: halaman instruksi instal
-- style.css: tampilan dark mode
-- app.js: rumus kalkulator
-- manifest.webmanifest: konfigurasi PWA
-- sw.js: service worker untuk cache/offline
-- assets/icon-192.png dan icon-512.png: ikon aplikasi
+Perubahan:
+- Input utama tidak lagi berisi angka bawaan.
+- Hasil awal tetap tanda strip sampai tombol Hitung diklik.
+- Price ladder diperkuat untuk harga dekat perubahan fraksi, misalnya 199 ke 200 ke 202.
+- Cache service worker dinaikkan ke v1.1.0.
 
-Cara pakai paling mudah:
+Cara update di GitHub:
 1. Ekstrak ZIP.
-2. Upload semua file ke Netlify atau hosting.
-3. Buka download.html atau index.html.
-4. Di Android Chrome, pilih Tambahkan ke layar utama atau Instal aplikasi.
+2. Buka folder kalkulator-saham-pwa-v1-1.
+3. Upload semua isi folder ke repository GitHub yang sama.
+4. Commit changes.
+5. Tunggu GitHub Pages selesai deploy.
+6. Buka link aplikasi dan refresh.
 
-Default Stockbit:
-- Fee beli: 0,15%
-- Fee jual total: 0,25%
-- Pajak estimasi: 0,10%
+Tes entry 199:
+Total Modal: 100.000.000
+Alokasi per Trade: 20.000.000
+Harga Entry: 199
+Target Profit Bersih: 2.000.000
+Fee Beli: 0,15
+Fee Jual Total: 0,25
+Pajak Estimasi: 0,10
 
-Catatan penting:
+Catatan:
 Fee jual total dipakai sebagai total potongan jual. Pajak estimasi hanya ditampilkan sebagai rincian agar tidak dihitung dua kali.
-
-Tes contoh:
-Total modal: 100.000.000
-Alokasi: 20.000.000
-Entry: 1.030
-Target profit bersih: 2.000.000
-Hasil sekitar:
-Lot: 193
-TP: 1.140
-SL: 930
-Profit bersih aktual: sekitar Rp2.038.176
-Loss bersih aktual: sekitar Rp2.004.692

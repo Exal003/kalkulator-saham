@@ -1,53 +1,46 @@
 'use strict';
 
 const LOT_SIZE = 100;
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 let lastResult = null;
-let deferredInstallPrompt = null;
+let deferredPrompt = null;
 
 const $ = (id) => document.getElementById(id);
 
-function onlyDigits(value) {
+function digitsOnly(value) {
   return String(value || '').replace(/[^0-9]/g, '');
 }
 
 function parseRupiah(value) {
-  const digits = onlyDigits(value);
+  const digits = digitsOnly(value);
   return digits ? Number(digits) : 0;
 }
 
 function parsePercent(value) {
-  const normalized = String(value || '').replace(/%/g, '').replace(/\./g, '').replace(',', '.').trim();
-  const number = Number(normalized);
-  return Number.isFinite(number) ? number : 0;
+  const raw = String(value || '').replace(/%/g, '').replace(/\./g, '').replace(',', '.').trim();
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : 0;
 }
 
-function formatRupiahNumber(value) {
-  const number = Math.round(Number(value) || 0);
-  return number.toLocaleString('id-ID');
+function fmtNum(value) {
+  return Math.round(Number(value) || 0).toLocaleString('id-ID');
 }
 
-function formatRupiah(value) {
-  return `Rp${formatRupiahNumber(value)}`;
+function fmtRp(value) {
+  return `Rp${fmtNum(value)}`;
 }
 
-function formatPercent(value) {
-  const number = Number(value) || 0;
-  return `${number.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+function fmtPct(value) {
+  return `${(Number(value) || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
-function formatInputRupiah(input) {
-  const digits = onlyDigits(input.value);
-  input.value = digits ? Number(digits).toLocaleString('id-ID') : '';
-}
-
-function formatInputPlainNumber(input) {
-  const digits = onlyDigits(input.value);
+function formatMoneyInput(input) {
+  const digits = digitsOnly(input.value);
   input.value = digits ? Number(digits).toLocaleString('id-ID') : '';
 }
 
 function normalizePercentInput(input) {
-  let value = String(input.value || '').replace(/[^0-9,\.]/g, '').replace('.', ',');
+  let value = String(input.value || '').replace(/[^0-9,.]/g, '').replace('.', ',');
   const parts = value.split(',');
   if (parts.length > 2) value = `${parts[0]},${parts.slice(1).join('')}`;
   input.value = value;
@@ -65,19 +58,35 @@ function getTickSize(price) {
 function isValidPrice(price) {
   const p = Number(price);
   if (!Number.isInteger(p) || p <= 0) return false;
-  const tick = getTickSize(p);
-  return p % tick === 0;
+  return p % getTickSize(p) === 0;
+}
+
+function nearestValidDown(price) {
+  for (let p = Math.floor(price); p > 0; p--) {
+    if (isValidPrice(p)) return p;
+  }
+  return 0;
+}
+
+function nearestValidUp(price) {
+  const start = Math.ceil(price);
+  for (let p = start; p < start + 10000; p++) {
+    if (isValidPrice(p)) return p;
+  }
+  return 0;
 }
 
 function nextValidPrice(price) {
-  for (let p = Math.floor(price) + 1; p <= price + 100; p++) {
+  const start = Math.floor(Number(price) || 0) + 1;
+  for (let p = start; p < start + 10000; p++) {
     if (isValidPrice(p)) return p;
   }
   throw new Error('Harga berikutnya tidak ditemukan.');
 }
 
 function previousValidPrice(price) {
-  for (let p = Math.ceil(price) - 1; p > 0 && p >= price - 100; p--) {
+  const start = Math.ceil(Number(price) || 0) - 1;
+  for (let p = start; p > 0 && p > start - 10000; p--) {
     if (isValidPrice(p)) return p;
   }
   throw new Error('Harga sebelumnya tidak ditemukan.');
@@ -87,10 +96,10 @@ function countTicksUp(entry, target) {
   let count = 0;
   let price = entry;
   let guard = 0;
-  while (price < target && guard < 300000) {
+  while (price < target && guard < 500000) {
     price = nextValidPrice(price);
-    count += 1;
-    guard += 1;
+    count++;
+    guard++;
   }
   return price === target ? count : 0;
 }
@@ -99,10 +108,10 @@ function countTicksDown(entry, target) {
   let count = 0;
   let price = entry;
   let guard = 0;
-  while (price > target && guard < 300000) {
+  while (price > target && guard < 500000) {
     price = previousValidPrice(price);
-    count += 1;
-    guard += 1;
+    count++;
+    guard++;
   }
   return price === target ? count : 0;
 }
@@ -115,7 +124,7 @@ function getSLStatus(ticks) {
   return 'Cukup longgar';
 }
 
-function calculateSellAtPrice(price, shares, sellFeeRate, taxRate) {
+function sellAt(price, shares, sellFeeRate, taxRate) {
   const gross = Math.round(price * shares);
   const fee = Math.round(gross * sellFeeRate);
   const estimatedTax = Math.round(gross * taxRate);
@@ -126,50 +135,31 @@ function calculateSellAtPrice(price, shares, sellFeeRate, taxRate) {
 function findTP(entry, shares, totalCost, targetProfit, sellFeeRate, taxRate) {
   let price = entry;
   let guard = 0;
-  while (guard < 300000) {
+  while (guard < 500000) {
     price = nextValidPrice(price);
-    const sell = calculateSellAtPrice(price, shares, sellFeeRate, taxRate);
+    const sell = sellAt(price, shares, sellFeeRate, taxRate);
     const netProfit = sell.net - totalCost;
-    if (netProfit >= targetProfit) {
-      return { ...sell, netProfit };
-    }
-    guard += 1;
+    if (netProfit >= targetProfit) return { ...sell, netProfit };
+    guard++;
   }
-  throw new Error('TP tidak ditemukan. Target profit terlalu besar untuk simulasi ini.');
+  throw new Error('TP tidak ditemukan. Target profit terlalu besar.');
 }
 
 function findSL(entry, shares, totalCost, targetLoss, sellFeeRate, taxRate) {
   let price = entry;
   let guard = 0;
-  while (guard < 300000) {
+  while (guard < 500000) {
     price = previousValidPrice(price);
-    if (price <= 0) break;
-    const sell = calculateSellAtPrice(price, shares, sellFeeRate, taxRate);
+    const sell = sellAt(price, shares, sellFeeRate, taxRate);
     const netLoss = totalCost - sell.net;
-    if (netLoss >= targetLoss) {
-      return { ...sell, netLoss };
-    }
-    guard += 1;
+    if (netLoss >= targetLoss) return { ...sell, netLoss };
+    guard++;
   }
-  throw new Error('SL tidak ditemukan. Target loss membuat harga SL mendekati nol.');
+  throw new Error('SL tidak ditemukan. Target loss membuat harga terlalu dekat nol.');
 }
 
-function validateInput(input) {
-  const errors = [];
-  if (input.totalCapital <= 0) errors.push('Total modal wajib diisi.');
-  if (input.allocation <= 0) errors.push('Alokasi per trade wajib diisi.');
-  if (input.allocation > input.totalCapital) errors.push('Alokasi modal tidak boleh lebih besar dari total modal.');
-  if (input.entryPrice <= 0) errors.push('Harga entry wajib diisi.');
-  if (!isValidPrice(input.entryPrice)) errors.push(`Harga entry belum sesuai fraksi harga BEI. Harga terdekat perlu mengikuti tick Rp${getTickSize(input.entryPrice)}.`);
-  if (input.targetProfit <= 0) errors.push('Target profit bersih wajib diisi.');
-  if (input.buyFeePct < 0 || input.sellFeePct < 0 || input.taxFeePct < 0) errors.push('Fee tidak boleh negatif.');
-  if (input.rrRatio <= 0) errors.push('Reward per 1 risk harus lebih besar dari 0.');
-  if (input.manualLotMode && input.manualLot <= 0) errors.push('Lot manual harus lebih besar dari 0.');
-  return errors;
-}
-
-function calculate() {
-  const input = {
+function readInput() {
+  return {
     symbol: $('symbol').value.trim().toUpperCase(),
     totalCapital: parseRupiah($('totalCapital').value),
     allocation: parseRupiah($('allocation').value),
@@ -182,20 +172,40 @@ function calculate() {
     manualLotMode: $('manualLotToggle').checked,
     manualLot: parseRupiah($('manualLot').value)
   };
+}
 
-  const errors = validateInput(input);
+function validate(input) {
+  const errors = [];
+  if (input.totalCapital <= 0) errors.push('Total modal wajib diisi.');
+  if (input.allocation <= 0) errors.push('Alokasi per trade wajib diisi.');
+  if (input.allocation > input.totalCapital) errors.push('Alokasi tidak boleh lebih besar dari total modal.');
+  if (input.entryPrice <= 0) errors.push('Harga entry wajib diisi.');
+  if (input.targetProfit <= 0) errors.push('Target profit bersih wajib diisi.');
+  if (input.buyFeePct < 0 || input.sellFeePct < 0 || input.taxFeePct < 0) errors.push('Fee tidak boleh negatif.');
+  if (input.rrRatio <= 0) errors.push('Reward per 1 risk harus lebih besar dari 0.');
+  if (input.manualLotMode && input.manualLot <= 0) errors.push('Lot manual wajib diisi.');
+
+  if (input.entryPrice > 0 && !isValidPrice(input.entryPrice)) {
+    const down = nearestValidDown(input.entryPrice);
+    const up = nearestValidUp(input.entryPrice);
+    errors.push(`Harga entry belum sesuai fraksi BEI. Harga valid terdekat: ${fmtNum(down)} atau ${fmtNum(up)}.`);
+  }
+
+  return errors;
+}
+
+function calculate() {
+  const input = readInput();
+  const errors = validate(input);
   if (errors.length) throw new Error(errors.join('\n'));
 
   const buyFeeRate = input.buyFeePct / 100;
   const sellFeeRate = input.sellFeePct / 100;
   const taxRate = input.taxFeePct / 100;
 
-  let lots;
-  if (input.manualLotMode) {
-    lots = Math.floor(input.manualLot);
-  } else {
-    lots = Math.floor(input.allocation / (input.entryPrice * LOT_SIZE * (1 + buyFeeRate)));
-  }
+  const lots = input.manualLotMode
+    ? Math.floor(input.manualLot)
+    : Math.floor(input.allocation / (input.entryPrice * LOT_SIZE * (1 + buyFeeRate)));
 
   if (lots < 1) throw new Error('Jumlah lot 0. Naikkan alokasi atau turunkan harga entry.');
 
@@ -220,112 +230,88 @@ function calculate() {
   const entryTick = getTickSize(input.entryPrice);
   const slStatus = getSLStatus(slTicks);
 
-  return {
-    ...input,
-    buyFeeRate,
-    sellFeeRate,
-    taxRate,
-    lots,
-    shares,
-    grossBuy,
-    buyFee,
-    totalCost,
-    remainingAllocation,
-    targetLoss,
-    tp,
-    sl,
-    tpTicks,
-    slTicks,
-    tpPct,
-    slPct,
-    entryTick,
-    slStatus
-  };
+  return { ...input, buyFeeRate, sellFeeRate, taxRate, lots, shares, grossBuy, buyFee, totalCost, remainingAllocation, targetLoss, tp, sl, tpTicks, slTicks, tpPct, slPct, entryTick, slStatus };
 }
 
-function renderResult(result) {
+function setText(id, value) {
+  $(id).textContent = value;
+}
+
+function render(result) {
   lastResult = result;
+  setText('resultSymbol', result.symbol ? `${result.symbol} · Hasil` : 'Hasil');
+  setText('outLots', `${fmtNum(result.lots)} lot`);
+  setText('outShares', fmtNum(result.shares));
+  setText('outTotalCost', fmtRp(result.totalCost));
+  setText('outRemain', fmtRp(result.remainingAllocation));
+  setText('outRR', `R:R 1:${result.rrRatio.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`);
 
-  $('resultSymbol').textContent = result.symbol ? `${result.symbol} · Simulasi` : 'Simulasi';
-  $('outLots').textContent = `${formatRupiahNumber(result.lots)} lot`;
-  $('outShares').textContent = formatRupiahNumber(result.shares);
-  $('outTotalCost').textContent = formatRupiah(result.totalCost);
-  $('outRemain').textContent = formatRupiah(result.remainingAllocation);
-  $('outRR').textContent = `R:R 1:${result.rrRatio.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
+  setText('outTP', `TP ${fmtNum(result.tp.price)}`);
+  setText('outTPTicks', result.tpTicks);
+  setText('outTPPct', fmtPct(result.tpPct));
+  setText('outNetProfit', fmtRp(result.tp.netProfit));
 
-  $('outTP').textContent = `TP ${formatRupiahNumber(result.tp.price)}`;
-  $('outTPTicks').textContent = result.tpTicks;
-  $('outTPPct').textContent = formatPercent(result.tpPct);
-  $('outNetProfit').textContent = formatRupiah(result.tp.netProfit);
+  setText('outSL', `SL ${fmtNum(result.sl.price)}`);
+  setText('outSLTicks', result.slTicks);
+  setText('outSLPct', fmtPct(result.slPct));
+  setText('outNetLoss', fmtRp(result.sl.netLoss));
 
-  $('outSL').textContent = `SL ${formatRupiahNumber(result.sl.price)}`;
-  $('outSLTicks').textContent = result.slTicks;
-  $('outSLPct').textContent = formatPercent(result.slPct);
-  $('outNetLoss').textContent = formatRupiah(result.sl.netLoss);
+  setText('costGrossBuy', fmtRp(result.grossBuy));
+  setText('costBuyFee', `${fmtRp(result.buyFee)} (${fmtPct(result.buyFeePct)})`);
+  setText('costTotalUsed', fmtRp(result.totalCost));
+  setText('costGrossSellTP', fmtRp(result.tp.gross));
+  setText('costSellFeeTP', `${fmtRp(result.tp.fee)} (${fmtPct(result.sellFeePct)})`);
+  setText('costTaxTP', `${fmtRp(result.tp.estimatedTax)} (${fmtPct(result.taxFeePct)})`);
+  setText('costProfit', fmtRp(result.tp.netProfit));
+  setText('costGrossSellSL', fmtRp(result.sl.gross));
+  setText('costSellFeeSL', `${fmtRp(result.sl.fee)} (${fmtPct(result.sellFeePct)})`);
+  setText('costTaxSL', `${fmtRp(result.sl.estimatedTax)} (${fmtPct(result.taxFeePct)})`);
+  setText('costLoss', fmtRp(result.sl.netLoss));
 
-  $('resultNote').textContent = result.slTicks <= 3
+  setText('insTick', `Rp${fmtNum(result.entryTick)}`);
+  setText('insTPDist', `${result.tpTicks} tick`);
+  setText('insSLDist', `${result.slTicks} tick`);
+  setText('insStatus', result.slStatus);
+  setText('chartTP', `TP ${fmtNum(result.tp.price)}`);
+  setText('chartEntry', `Entry ${fmtNum(result.entryPrice)}`);
+  setText('chartSL', `SL ${fmtNum(result.sl.price)}`);
+
+  const warning = result.slTicks <= 3
     ? `Peringatan: SL hanya ${result.slTicks} tick dari entry. Jarak ini sangat dekat.`
-    : `Target profit bersih minimal ${formatRupiah(result.targetProfit)}. SL berstatus ${result.slStatus}.`;
-
-  $('costGrossBuy').textContent = formatRupiah(result.grossBuy);
-  $('costBuyFee').textContent = `${formatRupiah(result.buyFee)} (${formatPercent(result.buyFeePct)})`;
-  $('costTotalUsed').textContent = formatRupiah(result.totalCost);
-
-  $('costGrossSellTP').textContent = formatRupiah(result.tp.gross);
-  $('costSellFeeTP').textContent = `${formatRupiah(result.tp.fee)} (${formatPercent(result.sellFeePct)})`;
-  $('costTaxTP').textContent = `${formatRupiah(result.tp.estimatedTax)} (${formatPercent(result.taxFeePct)})`;
-  $('costProfit').textContent = formatRupiah(result.tp.netProfit);
-
-  $('costGrossSellSL').textContent = formatRupiah(result.sl.gross);
-  $('costSellFeeSL').textContent = `${formatRupiah(result.sl.fee)} (${formatPercent(result.sellFeePct)})`;
-  $('costTaxSL').textContent = `${formatRupiah(result.sl.estimatedTax)} (${formatPercent(result.taxFeePct)})`;
-  $('costLoss').textContent = formatRupiah(result.sl.netLoss);
-
-  $('insTick').textContent = `Rp${formatRupiahNumber(result.entryTick)}`;
-  $('insTPDist').textContent = `${result.tpTicks} tick`;
-  $('insSLDist').textContent = `${result.slTicks} tick`;
-  $('insStatus').textContent = result.slStatus;
-
-  $('chartRange').textContent = `${formatRupiahNumber(result.sl.price)} - ${formatRupiahNumber(result.tp.price)}`;
-  $('chartTP').textContent = `TP ${formatRupiahNumber(result.tp.price)}`;
-  $('chartEntry').textContent = `Entry ${formatRupiahNumber(result.entryPrice)}`;
-  $('chartSL').textContent = `SL ${formatRupiahNumber(result.sl.price)}`;
+    : `Target profit bersih minimal ${fmtRp(result.targetProfit)}. Status SL: ${result.slStatus}.`;
+  setText('resultNote', warning);
 }
 
 function showError(message) {
-  const box = $('errorBox');
-  box.textContent = message;
-  box.hidden = false;
+  $('errorBox').textContent = message;
+  $('errorBox').hidden = false;
 }
 
 function clearError() {
-  const box = $('errorBox');
-  box.textContent = '';
-  box.hidden = true;
+  $('errorBox').textContent = '';
+  $('errorBox').hidden = true;
 }
 
 function showPage(name) {
   document.querySelectorAll('.page').forEach((page) => page.classList.remove('active'));
   $(`page-${name}`).classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.target === name);
-  });
+  document.querySelectorAll('.navbtn').forEach((btn) => btn.classList.toggle('active', btn.dataset.target === name));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function resetDefaults() {
+function resetForm() {
   $('symbol').value = '';
-  $('totalCapital').value = '100.000.000';
-  $('allocation').value = '20.000.000';
-  $('entryPrice').value = '1.030';
-  $('targetProfit').value = '2.000.000';
+  $('totalCapital').value = '';
+  $('allocation').value = '';
+  $('entryPrice').value = '';
+  $('targetProfit').value = '';
   $('buyFee').value = '0,15';
   $('sellFee').value = '0,25';
   $('taxFee').value = '0,10';
   $('manualLotToggle').checked = false;
-  $('manualLot').value = '193';
+  $('manualLot').value = '';
   $('manualLot').disabled = true;
-  $('manualLotWrap').classList.add('muted');
+  $('manualLotWrap').classList.add('disabled');
   $('rrRatio').value = '1';
   clearError();
 }
@@ -334,15 +320,16 @@ function copyResult() {
   if (!lastResult) return;
   const r = lastResult;
   const text = [
-    `Kalkulator Saham ${r.symbol ? `- ${r.symbol}` : ''}`.trim(),
-    `Entry: Rp${formatRupiahNumber(r.entryPrice)}`,
-    `Lot: ${formatRupiahNumber(r.lots)} lot`,
-    `TP: Rp${formatRupiahNumber(r.tp.price)} | ${r.tpTicks} tick | ${formatPercent(r.tpPct)} | Profit bersih ${formatRupiah(r.tp.netProfit)}`,
-    `SL: Rp${formatRupiahNumber(r.sl.price)} | ${r.slTicks} tick | ${formatPercent(r.slPct)} | Loss bersih ${formatRupiah(r.sl.netLoss)}`,
-    `Modal terpakai: ${formatRupiah(r.totalCost)}`,
-    `Sisa alokasi: ${formatRupiah(r.remainingAllocation)}`,
+    `Kalkulator Saham ${r.symbol ? '- ' + r.symbol : ''}`.trim(),
+    `Entry: Rp${fmtNum(r.entryPrice)}`,
+    `Lot: ${fmtNum(r.lots)} lot`,
+    `TP: Rp${fmtNum(r.tp.price)} | ${r.tpTicks} tick | ${fmtPct(r.tpPct)} | Profit bersih ${fmtRp(r.tp.netProfit)}`,
+    `SL: Rp${fmtNum(r.sl.price)} | ${r.slTicks} tick | ${fmtPct(r.slPct)} | Loss bersih ${fmtRp(r.sl.netLoss)}`,
+    `Modal terpakai: ${fmtRp(r.totalCost)}`,
+    `Sisa alokasi: ${fmtRp(r.remainingAllocation)}`,
     `Status SL: ${r.slStatus}`
   ].join('\n');
+
   navigator.clipboard?.writeText(text).then(() => {
     $('copyBtn').textContent = 'Tersalin';
     setTimeout(() => $('copyBtn').textContent = 'Salin', 1300);
@@ -350,28 +337,16 @@ function copyResult() {
 }
 
 function bindEvents() {
-  document.querySelectorAll('.rupiah-input').forEach((input) => {
-    input.addEventListener('input', () => formatInputRupiah(input));
-  });
+  document.querySelectorAll('.money').forEach((input) => input.addEventListener('input', () => formatMoneyInput(input)));
+  document.querySelectorAll('.percent').forEach((input) => input.addEventListener('input', () => normalizePercentInput(input)));
+  document.querySelectorAll('.navbtn').forEach((button) => button.addEventListener('click', () => showPage(button.dataset.target)));
 
-  document.querySelectorAll('.percent-input').forEach((input) => {
-    input.addEventListener('input', () => normalizePercentInput(input));
-  });
-
-  document.querySelectorAll('.plain-number').forEach((input) => {
-    input.addEventListener('input', () => formatInputPlainNumber(input));
-  });
-
-  document.querySelectorAll('.nav-btn').forEach((button) => {
-    button.addEventListener('click', () => showPage(button.dataset.target));
-  });
-
-  $('calculatorForm').addEventListener('submit', (event) => {
+  $('form').addEventListener('submit', (event) => {
     event.preventDefault();
     clearError();
     try {
       const result = calculate();
-      renderResult(result);
+      render(result);
       showPage('result');
     } catch (error) {
       showError(error.message);
@@ -379,7 +354,7 @@ function bindEvents() {
     }
   });
 
-  $('stockbitPreset').addEventListener('click', () => {
+  $('presetBtn').addEventListener('click', () => {
     $('buyFee').value = '0,15';
     $('sellFee').value = '0,25';
     $('taxFee').value = '0,10';
@@ -388,41 +363,32 @@ function bindEvents() {
   $('manualLotToggle').addEventListener('change', (event) => {
     const active = event.target.checked;
     $('manualLot').disabled = !active;
-    $('manualLotWrap').classList.toggle('muted', !active);
+    $('manualLotWrap').classList.toggle('disabled', !active);
   });
 
-  $('resetBtn').addEventListener('click', resetDefaults);
+  $('resetBtn').addEventListener('click', resetForm);
   $('copyBtn').addEventListener('click', copyResult);
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
-    deferredInstallPrompt = event;
-    const btn = $('installBtn');
-    btn.hidden = false;
-    btn.addEventListener('click', async () => {
-      btn.hidden = true;
-      deferredInstallPrompt.prompt();
-      await deferredInstallPrompt.userChoice;
-      deferredInstallPrompt = null;
-    }, { once: true });
+    deferredPrompt = event;
+    $('installBtn').hidden = false;
+  });
+
+  $('installBtn').addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    $('installBtn').hidden = true;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
   });
 }
 
-function registerServiceWorker() {
+function registerSW() {
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
-    });
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
   }
 }
 
-function init() {
-  bindEvents();
-  registerServiceWorker();
-  try {
-    const result = calculate();
-    renderResult(result);
-  } catch (_) {}
-}
-
-init();
+bindEvents();
+registerSW();

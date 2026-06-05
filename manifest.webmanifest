@@ -1,7 +1,7 @@
 {
   "name": "Kalkulator Saham",
   "short_name": "Kalkulator Saham",
-  "description": "Kalkulator saham Indonesia untuk menghitung lot, TP, SL, biaya, profit bersih, loss bersih, tick, dan persentase harga.",
+  "description": "Kalkulator saham Indonesia untuk menghitung lot, TP, SL, fee, profit bersih, loss bersih, tick, dan persentase harga.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -9,17 +9,7 @@
   "theme_color": "#07111f",
   "orientation": "portrait",
   "icons": [
-    {
-      "src": "assets/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "assets/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
