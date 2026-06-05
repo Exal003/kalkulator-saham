@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <meta name="description" content="Kalkulator saham Indonesia untuk menghitung lot, TP, SL, fee, profit bersih, loss bersih, tick, dan persentase harga." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="stylesheet" href="style.css" />
+  <title>Kalkulator Saham</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">▦</div>
+        <div>
+          <h1>Kalkulator <span>Saham</span></h1>
+          <p>Hitung lot, TP, SL, biaya, dan profit bersih.</p>
+        </div>
+      </div>
+      <button class="ghost-btn" id="installBtn" hidden>Instal</button>
+    </header>
+
+    <main class="phone-frame" aria-live="polite">
+      <section class="page active" id="page-input" data-title="Input">
+        <div class="page-head">
+          <div>
+            <p class="eyebrow">Versi 1.0.0</p>
+            <h2>Input Simulasi</h2>
+          </div>
+          <button class="mini-btn" id="resetBtn" type="button">Reset</button>
+        </div>
+
+        <form id="calculatorForm" class="form-card" autocomplete="off">
+          <label class="field">
+            <span>Kode Saham <small>opsional</small></span>
+            <input id="symbol" type="text" inputmode="text" placeholder="Contoh: BBRI" maxlength="8" />
+          </label>
+
+          <div class="grid-2">
+            <label class="field">
+              <span>Total Modal <small>Rp</small></span>
+              <input id="totalCapital" class="rupiah-input" type="text" inputmode="numeric" value="100.000.000" />
+            </label>
+            <label class="field">
+              <span>Alokasi per Trade <small>Rp</small></span>
+              <input id="allocation" class="rupiah-input" type="text" inputmode="numeric" value="20.000.000" />
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <label class="field">
+              <span>Harga Entry <small>Rp</small></span>
+              <input id="entryPrice" class="rupiah-input" type="text" inputmode="numeric" value="1.030" />
+            </label>
+            <label class="field">
+              <span>Target Profit Bersih <small>Rp</small></span>
+              <input id="targetProfit" class="rupiah-input" type="text" inputmode="numeric" value="2.000.000" />
+            </label>
+          </div>
+
+          <div class="broker-card">
+            <div class="broker-head">
+              <strong>Biaya dan Broker</strong>
+              <button type="button" class="chip" id="stockbitPreset">Preset Stockbit</button>
+            </div>
+            <div class="grid-3">
+              <label class="field compact">
+                <span>Fee Beli</span>
+                <input id="buyFee" class="percent-input" type="text" inputmode="decimal" value="0,15" />
+              </label>
+              <label class="field compact">
+                <span>Fee Jual Total</span>
+                <input id="sellFee" class="percent-input" type="text" inputmode="decimal" value="0,25" />
+              </label>
+              <label class="field compact">
+                <span>Pajak Estimasi</span>
+                <input id="taxFee" class="percent-input" type="text" inputmode="decimal" value="0,10" />
+              </label>
+            </div>
+            <p class="helper">Fee jual total dipakai sebagai potongan jual. Pajak estimasi hanya ditampilkan sebagai rincian agar tidak dihitung dua kali.</p>
+          </div>
+
+          <div class="advanced-card">
+            <label class="toggle-row">
+              <input id="manualLotToggle" type="checkbox" />
+              <span>Gunakan lot manual</span>
+            </label>
+            <div class="grid-2">
+              <label class="field compact muted" id="manualLotWrap">
+                <span>Lot Manual</span>
+                <input id="manualLot" class="plain-number" type="text" inputmode="numeric" value="193" disabled />
+              </label>
+              <label class="field compact">
+                <span>Reward per 1 Risk</span>
+                <input id="rrRatio" class="percent-input" type="text" inputmode="decimal" value="1" />
+              </label>
+            </div>
+            <p class="helper">Default R:R 1:1. Jika reward diisi 2, target loss bersih menjadi setengah dari target profit.</p>
+          </div>
+
+          <div id="errorBox" class="error-box" hidden></div>
+          <button class="primary-btn" type="submit">Hitung</button>
+        </form>
+      </section>
+
+      <section class="page" id="page-result" data-title="Hasil">
+        <div class="page-head">
+          <div>
+            <p class="eyebrow" id="resultSymbol">Simulasi</p>
+            <h2>Hasil Utama</h2>
+          </div>
+          <button class="mini-btn" id="copyBtn" type="button">Salin</button>
+        </div>
+
+        <div class="summary-grid">
+          <article class="metric-card">
+            <span>Jumlah Lot</span>
+            <strong id="outLots">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>Jumlah Lembar</span>
+            <strong id="outShares">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>Modal Terpakai</span>
+            <strong id="outTotalCost">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>Sisa Alokasi</span>
+            <strong class="positive" id="outRemain">-</strong>
+          </article>
+        </div>
+
+        <div class="rr-badge" id="outRR">R:R 1:1</div>
+
+        <div class="tp-sl-grid">
+          <article class="trade-card profit-card">
+            <span>Take Profit</span>
+            <h3 id="outTP">-</h3>
+            <p><b id="outTPTicks">-</b> tick</p>
+            <p><b id="outTPPct">-</b> dari entry</p>
+            <div class="divider"></div>
+            <small>Profit Bersih Aktual</small>
+            <strong id="outNetProfit">-</strong>
+          </article>
+          <article class="trade-card loss-card">
+            <span>Stop Loss</span>
+            <h3 id="outSL">-</h3>
+            <p><b id="outSLTicks">-</b> tick</p>
+            <p><b id="outSLPct">-</b> dari entry</p>
+            <div class="divider"></div>
+            <small>Loss Bersih Aktual</small>
+            <strong id="outNetLoss">-</strong>
+          </article>
+        </div>
+
+        <div class="note-card" id="resultNote">Perhitungan memakai target profit bersih setelah biaya.</div>
+      </section>
+
+      <section class="page" id="page-cost" data-title="Biaya">
+        <div class="page-head">
+          <div>
+            <p class="eyebrow">Rincian</p>
+            <h2>Biaya Transaksi</h2>
+          </div>
+        </div>
+
+        <div class="cost-panel">
+          <h3>Pembelian</h3>
+          <div class="row"><span>Nilai Beli Kotor</span><b id="costGrossBuy">-</b></div>
+          <div class="row"><span>Fee Beli</span><b id="costBuyFee">-</b></div>
+          <div class="row total"><span>Total Modal Terpakai</span><b id="costTotalUsed">-</b></div>
+        </div>
+
+        <div class="cost-panel green">
+          <h3>Penjualan Take Profit</h3>
+          <div class="row"><span>Nilai Jual Kotor TP</span><b id="costGrossSellTP">-</b></div>
+          <div class="row"><span>Fee Jual TP</span><b id="costSellFeeTP">-</b></div>
+          <div class="row"><span>Pajak Jual Estimasi</span><b id="costTaxTP">-</b></div>
+          <div class="row total"><span>Profit Bersih Aktual</span><b id="costProfit">-</b></div>
+        </div>
+
+        <div class="cost-panel red">
+          <h3>Penjualan Stop Loss</h3>
+          <div class="row"><span>Nilai Jual Kotor SL</span><b id="costGrossSellSL">-</b></div>
+          <div class="row"><span>Fee Jual SL</span><b id="costSellFeeSL">-</b></div>
+          <div class="row"><span>Pajak Jual Estimasi</span><b id="costTaxSL">-</b></div>
+          <div class="row total"><span>Loss Bersih Aktual</span><b id="costLoss">-</b></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-insight" data-title="Insight">
+        <div class="page-head">
+          <div>
+            <p class="eyebrow">Analisis</p>
+            <h2>Insight Risiko</h2>
+          </div>
+        </div>
+
+        <div class="summary-grid insight-grid">
+          <article class="metric-card">
+            <span>Tick Size Entry</span>
+            <strong id="insTick">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>Jarak TP</span>
+            <strong class="positive" id="insTPDist">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>Jarak SL</span>
+            <strong class="negative" id="insSLDist">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>Kondisi SL</span>
+            <strong id="insStatus">-</strong>
+          </article>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-head">
+            <span>Ilustrasi Level Harga</span>
+            <b id="chartRange">-</b>
+          </div>
+          <div class="price-map">
+            <div class="line tp-line"><span id="chartTP">TP</span></div>
+            <div class="line entry-line"><span id="chartEntry">Entry</span></div>
+            <div class="line sl-line"><span id="chartSL">SL</span></div>
+            <div class="fake-candles" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-card success">
+          <strong>Target profit dihitung bersih.</strong>
+          <p>Hasil sudah memperhitungkan fee beli dan fee jual total.</p>
+        </div>
+        <div class="info-card warning">
+          <strong>TP dan SL mengikuti fraksi harga BEI.</strong>
+          <p>Sistem memakai price ladder dinamis saat harga melewati batas fraksi.</p>
+        </div>
+        <div class="info-card">
+          <strong>Disclaimer</strong>
+          <p>Kalkulator ini hanya alat bantu simulasi. Hasil aktual dapat berbeda karena antrean order, likuiditas, perubahan harga, dan biaya transaksi.</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Navigasi utama">
+      <button class="nav-btn active" data-target="input"><span>▦</span>Input</button>
+      <button class="nav-btn" data-target="result"><span>▥</span>Hasil</button>
+      <button class="nav-btn" data-target="cost"><span>▤</span>Biaya</button>
+      <button class="nav-btn" data-target="insight"><span>◎</span>Insight</button>
+    </nav>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
