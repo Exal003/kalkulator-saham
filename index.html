@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#07111f">
-  <meta name="app-version" content="1.3.0">
+  <meta name="app-version" content="1.4.1">
   <title>Kalkulator Saham</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/icon-192.png">
@@ -17,7 +17,7 @@
       <div class="logo">▦</div>
       <div>
         <h1>Kalkulator <span>Saham</span></h1>
-        <p>Hitung lot, TP, SL, fee, tick, dan profit bersih.</p>
+        <p>Simulasi position sizing, TP/SL, fee transaksi, tick size, dan profit/loss bersih.</p>
       </div>
       <div class="header-actions">
         <button id="updateBtn" class="small-btn" type="button">Update</button>
@@ -37,8 +37,8 @@
       <section id="page-input" class="page active">
         <div class="page-title">
           <div>
-            <small>Versi 1.3.0</small>
-            <h2>Input</h2>
+            <small>Versi 1.4.1</small>
+            <h2>Parameter Transaksi</h2>
           </div>
           <button id="resetBtn" class="small-btn" type="button">Reset</button>
         </div>
@@ -51,135 +51,162 @@
 
           <div class="two">
             <label class="field">
-              <span>Total Modal <b>opsional</b></span>
+              <span>Dana Trading Tersedia <b>opsional</b></span>
               <input id="totalCapital" class="money" type="text" inputmode="numeric" placeholder="100.000.000">
             </label>
             <label class="field">
-              <span>Alokasi per Trade <b>Rp/opsional jika auto</b></span>
+              <span>Position Size / Plafon Posisi <b>Rp/opsional</b></span>
               <input id="allocation" class="money" type="text" inputmode="numeric" placeholder="20.000.000">
             </label>
           </div>
 
-          <div class="two">
-            <label class="field">
-              <span>Harga Entry <b>Rp</b></span>
-              <input id="entryPrice" class="money" type="text" inputmode="numeric" placeholder="199">
-            </label>
-            <label class="field">
-              <span>Target Profit Bersih <b>Rp</b></span>
-              <input id="targetProfit" class="money" type="text" inputmode="numeric" placeholder="2.000.000">
-            </label>
-          </div>
+          <label class="field">
+            <span>Harga Entry <b>Rp</b></span>
+            <input id="entryPrice" class="money" type="text" inputmode="numeric" placeholder="199">
+          </label>
 
           <div class="subcard">
             <div class="subhead">
-              <strong>Biaya Stockbit</strong>
+              <strong>Biaya Transaksi</strong>
               <button id="presetBtn" class="chip" type="button">Preset Stockbit</button>
             </div>
             <div class="three">
               <label class="field compact">
-                <span>Fee Beli</span>
+                <span>Estimasi Fee Beli</span>
                 <input id="buyFee" class="percent" type="text" inputmode="decimal" value="0,15">
               </label>
               <label class="field compact">
-                <span>Fee Jual Total</span>
+                <span>Fee Jual Efektif</span>
                 <input id="sellFee" class="percent" type="text" inputmode="decimal" value="0,25">
               </label>
               <label class="field compact">
-                <span>Pajak Estimasi</span>
+                <span>Komponen Pajak Jual</span>
                 <input id="taxFee" class="percent" type="text" inputmode="decimal" value="0,10">
               </label>
             </div>
-            <p class="hint">Fee jual total dipakai sebagai potongan jual. Pajak hanya tampil sebagai rincian agar tidak dihitung dua kali.</p>
+            <p class="hint">Fee jual efektif dipakai sebagai potongan jual. Komponen pajak hanya ditampilkan sebagai rincian agar tidak dihitung dua kali.</p>
           </div>
 
           <div class="subcard">
             <label class="checkrow">
               <input id="manualLotToggle" type="checkbox">
-              <span>Gunakan lot manual</span>
+              <span>Gunakan jumlah lot manual</span>
             </label>
-            <div class="two">
-              <label id="manualLotWrap" class="field compact disabled">
-                <span>Lot Manual</span>
-                <input id="manualLot" class="money" type="text" inputmode="numeric" placeholder="193" disabled>
-              </label>
-              <label class="field compact">
-                <span>Reward per 1 Risk</span>
-                <input id="rrRatio" class="percent" type="text" inputmode="decimal" value="1">
-              </label>
+            <label id="manualLotWrap" class="field compact disabled">
+              <span>Jumlah Lot Manual</span>
+              <input id="manualLot" class="money" type="text" inputmode="numeric" placeholder="193" disabled>
+            </label>
+            <p class="hint">Aktifkan hanya jika kamu ingin menentukan jumlah lot sendiri. Jika tidak aktif, aplikasi akan menghitung lot dari plafon posisi atau metode sizing otomatis.</p>
+          </div>
+
+          <div class="subcard exit-section">
+            <div class="subhead stacked-head">
+              <div>
+                <strong>Strategi Exit dan Position Sizing</strong>
+                <p>Semua input TP dan SL dibuat berdekatan agar alur hitung tidak loncat antar bagian.</p>
+              </div>
             </div>
+
+            <label class="field compact sizing-mode">
+              <span>Metode Position Sizing</span>
+              <select id="allocationMode">
+                <option value="manual" selected>Manual dari position size / plafon posisi</option>
+                <option value="tp_profit">Cari kebutuhan dana beli dari target net profit</option>
+                <option value="sl_risk">Cari position size dari risiko maksimal</option>
+              </select>
+            </label>
+
+            <div class="exit-stack">
+              <section class="exit-card take-profit">
+                <div class="exit-title">
+                  <div>
+                    <strong>Take Profit (TP)</strong>
+                    <span>Target harga keluar saat posisi profit.</span>
+                  </div>
+                  <em>Profit</em>
+                </div>
+                <div class="exit-grid">
+                  <label class="field compact wide">
+                    <span>Target Net Profit <b>Rp</b></span>
+                    <input id="targetProfit" class="money" type="text" inputmode="numeric" placeholder="2.000.000">
+                  </label>
+                  <label class="field compact">
+                    <span>Jenis TP</span>
+                    <select id="tpMode">
+                      <option value="nominal" selected>Rupiah: target net profit bersih</option>
+                      <option value="percent">Persen dari position size</option>
+                      <option value="tick">Tick dari harga entry</option>
+                      <option value="price">Harga TP spesifik</option>
+                    </select>
+                  </label>
+                  <label class="field compact">
+                    <span>Nilai TP <b id="tpUnit">Rp</b></span>
+                    <input id="tpParam" class="mode-input" type="text" inputmode="numeric" placeholder="Boleh kosong jika target net profit diisi">
+                  </label>
+                </div>
+                <div class="mode-help">
+                  <span><b>Rp</b> target profit bersih</span>
+                  <span><b>%</b> dari position size</span>
+                  <span><b>Tick</b> dari entry</span>
+                  <span><b>Harga</b> TP langsung</span>
+                </div>
+              </section>
+
+              <section class="exit-card stop-loss">
+                <div class="exit-title">
+                  <div>
+                    <strong>Stop Loss (SL)</strong>
+                    <span>Batas rugi dan jarak risiko dari harga entry.</span>
+                  </div>
+                  <em>Risk</em>
+                </div>
+                <div class="exit-grid">
+                  <label class="field compact wide">
+                    <span>Risiko Maksimal <b>Rp/untuk sizing SL</b></span>
+                    <input id="autoAmount" class="money" type="text" inputmode="numeric" placeholder="1.000.000">
+                  </label>
+                  <label class="field compact">
+                    <span>Jenis SL</span>
+                    <select id="slMode">
+                      <option value="rr" selected>Rasio risk-reward</option>
+                      <option value="nominal">Rupiah: risiko bersih</option>
+                      <option value="percent">Persen dari position size</option>
+                      <option value="tick">Tick dari harga entry</option>
+                      <option value="price">Harga SL spesifik</option>
+                    </select>
+                  </label>
+                  <label class="field compact">
+                    <span>Nilai SL <b id="slUnit">R:R</b></span>
+                    <input id="slParam" class="mode-input" type="text" inputmode="numeric" placeholder="Kosongkan jika memakai R:R">
+                  </label>
+                  <label class="field compact wide rr-field">
+                    <span>Rasio Reward terhadap Risk <b>dipakai saat jenis SL = R:R</b></span>
+                    <input id="rrRatio" class="percent" type="text" inputmode="decimal" value="1">
+                  </label>
+                </div>
+                <div class="mode-help">
+                  <span><b>R:R</b> SL mengikuti TP</span>
+                  <span><b>Rp</b> batas rugi bersih</span>
+                  <span><b>%</b> dari position size</span>
+                  <span><b>Tick/Harga</b> dari entry</span>
+                </div>
+              </section>
+            </div>
+
+            <p class="hint">Contoh alur cepat: isi Harga Entry, isi Target Net Profit, pilih Jenis TP “Tick dari harga entry” atau “Harga TP spesifik”, lalu klik Hitung. Dana trading dan plafon posisi boleh kosong jika tujuanmu mencari kebutuhan dana beli.</p>
           </div>
 
           <div class="subcard">
             <div class="subhead">
-              <strong>Parameter TP dan SL Tambahan</strong>
+              <strong>Validasi Auto Rejection Harian</strong>
             </div>
             <div class="two">
               <label class="field compact">
-                <span>Mode Take Profit</span>
-                <select id="tpMode">
-                  <option value="nominal" selected>Nominal Rupiah lama</option>
-                  <option value="percent">Persen dari alokasi</option>
-                  <option value="tick">Jumlah tick ke atas</option>
-                  <option value="price">Harga TP</option>
-                </select>
-              </label>
-              <label class="field compact">
-                <span>Nilai TP Baru <b id="tpUnit">Rp</b></span>
-                <input id="tpParam" class="mode-input" type="text" inputmode="numeric" placeholder="Kosongkan untuk mode lama">
-              </label>
-            </div>
-            <div class="two">
-              <label class="field compact">
-                <span>Mode Stop Loss</span>
-                <select id="slMode">
-                  <option value="rr" selected>Otomatis dari R:R lama</option>
-                  <option value="nominal">Nominal Rupiah</option>
-                  <option value="percent">Persen dari alokasi</option>
-                  <option value="tick">Jumlah tick ke bawah</option>
-                  <option value="price">Harga SL</option>
-                </select>
-              </label>
-              <label class="field compact">
-                <span>Nilai SL Baru <b id="slUnit">R:R</b></span>
-                <input id="slParam" class="mode-input" type="text" inputmode="numeric" placeholder="Kosongkan untuk mode R:R">
-              </label>
-            </div>
-            <p class="hint">Mode lama tetap aktif jika TP memakai nominal Rupiah lama dan SL memakai R:R. Mode persen memakai alokasi per trade sebagai basis.</p>
-          </div>
-
-          <div class="subcard">
-            <div class="subhead">
-              <strong>Auto Alokasi per Trade</strong>
-            </div>
-            <div class="two">
-              <label class="field compact">
-                <span>Mode Alokasi</span>
-                <select id="allocationMode">
-                  <option value="manual" selected>Manual seperti lama</option>
-                  <option value="tp_profit">Hitung dari target profit + TP</option>
-                  <option value="sl_risk">Hitung dari risiko SL + SL</option>
-                </select>
-              </label>
-              <label class="field compact">
-                <span>Nominal Auto <b>Rp</b></span>
-                <input id="autoAmount" class="money" type="text" inputmode="numeric" placeholder="1.000.000">
-              </label>
-            </div>
-            <p class="hint">Gunakan auto alokasi jika ingin lot menyesuaikan entry dan posisi TP/SL. Untuk mode target profit, TP harus berupa tick atau harga. Untuk mode risiko SL, SL harus berupa tick atau harga.</p>
-          </div>
-
-          <div class="subcard">
-            <div class="subhead">
-              <strong>Cek Area ARA/ARB Harian</strong>
-            </div>
-            <div class="two">
-              <label class="field compact">
-                <span>Close Kemarin <b>Rp</b></span>
+                <span>Harga Penutupan Hari Sebelumnya <b>Rp</b></span>
                 <input id="prevClose" class="money" type="text" inputmode="numeric" placeholder="1.000">
               </label>
               <label class="field compact">
-                <span>Mode Batas</span>
+                <span>Metode Batas Auto Rejection</span>
                 <select id="autoRejectMode">
                   <option value="regular2025" selected>Reguler BEI: ARA bertingkat, ARB 15%</option>
                   <option value="symmetric">Simetris bertingkat</option>
@@ -197,11 +224,11 @@
                 <input id="customArbPct" class="percent" type="text" inputmode="decimal" value="15">
               </label>
             </div>
-            <p class="hint">Isi close kemarin untuk melihat apakah entry, TP, dan SL masih berada dalam batas ARA/ARB hari tersebut.</p>
+            <p class="hint">Isi harga penutupan hari sebelumnya untuk memvalidasi apakah entry, TP, dan SL masih berada dalam rentang ARA/ARB hari berjalan.</p>
           </div>
 
           <div id="errorBox" class="error" hidden></div>
-          <button class="primary" type="submit">Hitung</button>
+          <button class="primary" type="submit">Hitung Simulasi</button>
         </form>
       </section>
 
@@ -209,18 +236,18 @@
         <div class="page-title">
           <div>
             <small id="resultSymbol">Hasil</small>
-            <h2>Hasil Utama</h2>
+            <h2>Ringkasan Position Sizing</h2>
           </div>
           <button id="copyBtn" class="small-btn" type="button">Salin</button>
         </div>
 
         <div class="grid">
           <article class="metric"><span>Jumlah Lot</span><strong id="outLots">-</strong></article>
-          <article class="metric"><span>Jumlah Lembar</span><strong id="outShares">-</strong></article>
-          <article class="metric"><span>Modal Terpakai</span><strong id="outTotalCost">-</strong></article>
-          <article class="metric"><span>Sisa Alokasi</span><strong id="outRemain" class="green">-</strong></article>
-          <article class="metric"><span>Basis Alokasi</span><strong id="outAllocBasis">-</strong></article>
-          <article class="metric"><span>Mode TP/SL</span><strong id="outModeInfo">-</strong></article>
+          <article class="metric"><span>Jumlah Saham</span><strong id="outShares">-</strong></article>
+          <article class="metric"><span>Kebutuhan Dana Beli</span><strong id="outTotalCost">-</strong></article>
+          <article class="metric"><span>Sisa Plafon Posisi</span><strong id="outRemain" class="green">-</strong></article>
+          <article class="metric"><span>Metode Sizing</span><strong id="outAllocBasis">-</strong></article>
+          <article class="metric"><span>Parameter Exit</span><strong id="outModeInfo">-</strong></article>
         </div>
 
         <div class="rr" id="outRR">R:R -</div>
@@ -253,30 +280,30 @@
         <div class="page-title">
           <div>
             <small>Rincian</small>
-            <h2>Biaya</h2>
+            <h2>Estimasi Biaya</h2>
           </div>
         </div>
 
         <div class="cost cardline">
-          <h3>Pembelian</h3>
-          <p><span>Nilai Beli Kotor</span><b id="costGrossBuy">-</b></p>
-          <p><span>Fee Beli</span><b id="costBuyFee">-</b></p>
-          <p class="total"><span>Total Modal Terpakai</span><b id="costTotalUsed">-</b></p>
+          <h3>Estimasi Pembelian</h3>
+          <p><span>Nilai Pokok Pembelian</span><b id="costGrossBuy">-</b></p>
+          <p><span>Estimasi Fee Beli</span><b id="costBuyFee">-</b></p>
+          <p class="total"><span>Total Dana Beli</span><b id="costTotalUsed">-</b></p>
         </div>
 
         <div class="cost cardline good">
-          <h3>Penjualan Take Profit</h3>
-          <p><span>Nilai Jual Kotor TP</span><b id="costGrossSellTP">-</b></p>
-          <p><span>Fee Jual TP</span><b id="costSellFeeTP">-</b></p>
-          <p><span>Pajak Jual Estimasi</span><b id="costTaxTP">-</b></p>
+          <h3>Estimasi Penjualan saat TP</h3>
+          <p><span>Nilai Pokok Penjualan TP</span><b id="costGrossSellTP">-</b></p>
+          <p><span>Estimasi Fee Jual TP</span><b id="costSellFeeTP">-</b></p>
+          <p><span>Komponen Pajak Jual</span><b id="costTaxTP">-</b></p>
           <p class="total"><span>Profit Bersih Aktual</span><b id="costProfit">-</b></p>
         </div>
 
         <div class="cost cardline bad">
-          <h3>Penjualan Stop Loss</h3>
-          <p><span>Nilai Jual Kotor SL</span><b id="costGrossSellSL">-</b></p>
-          <p><span>Fee Jual SL</span><b id="costSellFeeSL">-</b></p>
-          <p><span>Pajak Jual Estimasi</span><b id="costTaxSL">-</b></p>
+          <h3>Estimasi Penjualan saat SL</h3>
+          <p><span>Nilai Pokok Penjualan SL</span><b id="costGrossSellSL">-</b></p>
+          <p><span>Estimasi Fee Jual SL</span><b id="costSellFeeSL">-</b></p>
+          <p><span>Komponen Pajak Jual</span><b id="costTaxSL">-</b></p>
           <p class="total"><span>Loss Bersih Aktual</span><b id="costLoss">-</b></p>
         </div>
       </section>
@@ -290,14 +317,14 @@
         </div>
 
         <div class="grid">
-          <article class="metric"><span>Tick Size Entry</span><strong id="insTick">-</strong></article>
+          <article class="metric"><span>Fraksi Harga Entry</span><strong id="insTick">-</strong></article>
           <article class="metric"><span>Jarak TP</span><strong id="insTPDist" class="green">-</strong></article>
           <article class="metric"><span>Jarak SL</span><strong id="insSLDist" class="red">-</strong></article>
-          <article class="metric"><span>Status SL</span><strong id="insStatus">-</strong></article>
+          <article class="metric"><span>Kualitas Jarak SL</span><strong id="insStatus">-</strong></article>
           <article class="metric"><span>Batas ARA</span><strong id="insAra">-</strong></article>
           <article class="metric"><span>Batas ARB</span><strong id="insArb">-</strong></article>
-          <article class="metric"><span>Status TP vs ARA</span><strong id="insTPAra" class="green">-</strong></article>
-          <article class="metric"><span>Status SL vs ARB</span><strong id="insSLArb" class="red">-</strong></article>
+          <article class="metric"><span>Validasi TP terhadap ARA</span><strong id="insTPAra" class="green">-</strong></article>
+          <article class="metric"><span>Kualitas Jarak SL vs ARB</span><strong id="insSLArb" class="red">-</strong></article>
         </div>
 
         <div class="chart cardline">
@@ -307,9 +334,9 @@
           <div class="candles"><i></i><i></i><i></i><i></i><i></i><i></i></div>
         </div>
 
-        <div id="araNote" class="notice">Isi close kemarin untuk cek batas ARA/ARB harian.</div>
-        <div class="notice">TP dan SL dibulatkan mengikuti fraksi harga BEI. Contoh penting: 199 → 200 → 202, bukan 199 → 200 → 201.</div>
-        <div class="notice">Kalkulator ini hanya alat bantu simulasi. Hasil aktual bisa berbeda karena antrean order, likuiditas, dan perubahan biaya.</div>
+        <div id="araNote" class="notice">Isi harga penutupan hari sebelumnya untuk cek batas ARA/ARB harian.</div>
+        <div class="notice">TP dan SL dibulatkan mengikuti fraksi harga BEI. Contoh: dari 199 naik ke 200 lalu 202, bukan 199 ke 200 lalu 201.</div>
+        <div class="notice">Kalkulator ini hanya alat bantu simulasi. Hasil aktual dapat berbeda karena antrean order, likuiditas, rejection order, dan perubahan biaya broker.</div>
       </section>
     </main>
 

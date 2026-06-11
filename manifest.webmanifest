@@ -1,7 +1,7 @@
 {
   "name": "Kalkulator Saham",
   "short_name": "Kalkulator Saham",
-  "description": "Kalkulator saham Indonesia untuk menghitung lot, TP, SL, fee, profit bersih, loss bersih, tick, persentase harga, auto alokasi, dan batas ARA/ARB.",
+  "description": "Kalkulator position sizing saham Indonesia untuk menghitung kebutuhan dana beli, lot, TP, SL, fee, net profit, net loss, tick size, dan validasi ARA/ARB.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

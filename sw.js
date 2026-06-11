@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.1';
 const CACHE_NAME = `kalkulator-saham-v${APP_VERSION}`;
 const ASSETS = [
   './',

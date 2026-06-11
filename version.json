@@ -1,9 +1,10 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.1",
   "released_at": "2026-06-11",
   "notes": [
-    "Menambahkan tombol Update untuk cek pembaruan langsung dari aplikasi.",
-    "Menambahkan notifikasi Update tersedia dan tombol Muat ulang.",
-    "Service worker diperbarui agar versi baru bisa aktif tanpa instal ulang PWA."
+    "Merapikan visual form agar input TP dan SL berada dalam satu area yang berdekatan.",
+    "Memindahkan Target Net Profit ke blok Take Profit agar alur hitung kebutuhan dana beli lebih jelas.",
+    "Memindahkan Risk/Reward dan Risiko Maksimal ke blok Stop Loss agar parameter risiko tidak terpisah dari SL.",
+    "Menyempurnakan istilah input menjadi lebih profesional dan mudah dipahami pengguna awam."
   ]
 }

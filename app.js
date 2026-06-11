@@ -1,7 +1,7 @@
 'use strict';
 
 const LOT_SIZE = 100;
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.1';
 let lastResult = null;
 let deferredPrompt = null;
 let swRegistration = null;
@@ -219,17 +219,39 @@ function readInput() {
   };
 }
 
+function getTargetProfitAmount(input) {
+  return input.targetProfit > 0 ? input.targetProfit : input.autoAmount;
+}
+
+function shouldAutoFromProfit(input) {
+  return !input.manualLotMode
+    && input.allocation <= 0
+    && input.targetProfit > 0
+    && ['tick', 'price', 'percent'].includes(input.tpMode)
+    && input.tpParam > 0;
+}
+
 function validate(input) {
   const errors = [];
   if (input.entryPrice <= 0) errors.push('Harga entry wajib diisi.');
   if (input.buyFeePct < 0 || input.sellFeePct < 0 || input.taxFeePct < 0) errors.push('Fee tidak boleh negatif.');
-  if (input.totalCapital > 0 && input.allocation > 0 && input.allocation > input.totalCapital) errors.push('Alokasi tidak boleh lebih besar dari total modal jika total modal diisi.');
-  if (input.manualLotMode && input.manualLot <= 0) errors.push('Lot manual wajib diisi jika mode lot manual aktif.');
-  if (!input.manualLotMode && input.allocationMode === 'manual' && input.allocation <= 0) errors.push('Alokasi per trade wajib diisi jika mode alokasi manual dipakai.');
-  if (input.slMode === 'rr' && input.rrRatio <= 0) errors.push('Reward per 1 risk harus lebih besar dari 0.');
-  if (input.allocationMode !== 'manual' && input.autoAmount <= 0) errors.push('Nominal auto wajib diisi jika mode auto alokasi aktif.');
-  if (input.allocationMode === 'tp_profit' && !['tick', 'price'].includes(input.tpMode)) errors.push('Auto alokasi dari target profit membutuhkan TP dalam mode tick atau harga.');
-  if (input.allocationMode === 'sl_risk' && !['tick', 'price'].includes(input.slMode)) errors.push('Auto alokasi dari risiko SL membutuhkan SL dalam mode tick atau harga.');
+  if (input.totalCapital > 0 && input.allocation > 0 && input.allocation > input.totalCapital) errors.push('Position size tidak boleh lebih besar dari dana trading tersedia jika kolom dana trading diisi.');
+  if (input.manualLotMode && input.manualLot <= 0) errors.push('Jumlah lot manual wajib diisi jika mode lot manual aktif.');
+  if (input.slMode === 'rr' && input.rrRatio <= 0) errors.push('Rasio reward terhadap risk harus lebih besar dari 0.');
+
+  if (input.allocationMode === 'tp_profit') {
+    if (getTargetProfitAmount(input) <= 0) errors.push('Target Net Profit wajib diisi untuk menghitung kebutuhan dana beli dari TP.');
+    if (!['tick', 'price', 'percent'].includes(input.tpMode)) errors.push('Untuk menghitung kebutuhan dana beli dari target net profit, pilih Jenis TP dalam mode tick, harga, atau persentase.');
+  }
+
+  if (input.allocationMode === 'sl_risk') {
+    if (input.autoAmount <= 0) errors.push('Risiko Maksimal wajib diisi untuk menghitung position size dari SL.');
+    if (!['tick', 'price', 'percent'].includes(input.slMode)) errors.push('Position sizing dari risiko SL membutuhkan Jenis SL dalam mode tick, harga, atau persentase.');
+  }
+
+  if (input.allocationMode === 'manual' && input.allocation <= 0 && !input.manualLotMode && input.targetProfit > 0 && !shouldAutoFromProfit(input)) {
+    errors.push('Untuk mencari kebutuhan dana beli dari target net profit, isi Target Net Profit lalu pilih Jenis TP tick, harga, atau persentase. Plafon posisi dan dana trading boleh dikosongkan.');
+  }
 
   if (input.entryPrice > 0 && !isValidPrice(input.entryPrice)) {
     const down = nearestValidDown(input.entryPrice);
@@ -240,7 +262,7 @@ function validate(input) {
   if (input.prevClose > 0 && !isValidPrice(input.prevClose)) {
     const down = nearestValidDown(input.prevClose);
     const up = nearestValidUp(input.prevClose);
-    errors.push(`Close kemarin belum sesuai fraksi harga. Harga valid terdekat: ${fmtNum(down)} atau ${fmtNum(up)}.`);
+    errors.push(`Harga penutupan hari sebelumnya belum sesuai fraksi harga. Harga valid terdekat: ${fmtNum(down)} atau ${fmtNum(up)}.`);
   }
 
   if (input.autoRejectMode === 'custom' && (input.customAraPct <= 0 || input.customArbPct <= 0)) {
@@ -276,14 +298,31 @@ function priceFromSLMode(input) {
   throw new Error('Mode ini membutuhkan SL berupa tick atau harga.');
 }
 
-function estimateAutoLots(input, buyFeeRate, sellFeeRate, taxRate) {
-  if (input.allocationMode === 'manual') return null;
+function estimateAutoLots(input, buyFeeRate, sellFeeRate, taxRate, forcedMode = null) {
+  const mode = forcedMode || input.allocationMode;
+  if (mode === 'manual') return null;
 
-  if (input.allocationMode === 'tp_profit') {
+  const costPerLot = buyCostAt(input.entryPrice, 1, buyFeeRate).totalCost;
+
+  if (mode === 'tp_profit') {
+    const targetAmount = getTargetProfitAmount(input);
+    if (targetAmount <= 0) throw new Error('Target net profit wajib diisi untuk menghitung position size dari TP.');
+
+    if (input.tpMode === 'percent') {
+      if (input.tpParam <= 0) throw new Error('Persentase TP wajib lebih besar dari 0.');
+      const targetAllocation = Math.ceil(targetAmount / (input.tpParam / 100));
+      let lots = Math.max(1, Math.floor(targetAllocation / costPerLot));
+      while ((buyCostAt(input.entryPrice, lots, buyFeeRate).totalCost * input.tpParam / 100) < targetAmount && lots < 1000000) lots++;
+      return {
+        lots,
+        basis: `Position size dicari dari target net profit ${fmtRp(targetAmount)}`,
+        note: `Position size dihitung dari target net profit ${fmtRp(targetAmount)} dan TP ${fmtPct(input.tpParam)} dari kebutuhan dana beli.`
+      };
+    }
+
     const tpPrice = priceFromTPMode(input);
-    if (tpPrice <= input.entryPrice) throw new Error('Harga TP dari mode auto harus berada di atas harga entry.');
+    if (tpPrice <= input.entryPrice) throw new Error('Harga TP untuk position sizing otomatis harus berada di atas harga entry.');
 
-    let lots = 1;
     const profitForLots = (lotCount) => {
       const buy = buyCostAt(input.entryPrice, lotCount, buyFeeRate);
       const sell = sellAt(tpPrice, buy.shares, sellFeeRate, taxRate);
@@ -291,20 +330,45 @@ function estimateAutoLots(input, buyFeeRate, sellFeeRate, taxRate) {
     };
 
     const perLotProfit = profitForLots(1);
-    if (perLotProfit <= 0) throw new Error('TP terlalu dekat. Profit per lot masih negatif setelah fee.');
-    lots = Math.max(1, Math.ceil(input.autoAmount / perLotProfit));
-    while (profitForLots(lots) < input.autoAmount && lots < 1000000) lots++;
+    if (perLotProfit <= 0) throw new Error('TP terlalu dekat. Net profit per lot masih negatif setelah fee.');
+    let lots = Math.max(1, Math.ceil(targetAmount / perLotProfit));
+    while (profitForLots(lots) < targetAmount && lots < 1000000) lots++;
 
     return {
       lots,
-      basis: `Auto dari target profit ${fmtRp(input.autoAmount)}`,
-      note: `Alokasi dihitung dari entry ${fmtNum(input.entryPrice)} dan TP ${fmtNum(tpPrice)} agar profit bersih minimal ${fmtRp(input.autoAmount)}.`
+      basis: `Position size dicari dari target net profit ${fmtRp(targetAmount)}`,
+      note: `Position size dihitung dari entry ${fmtNum(input.entryPrice)} dan TP ${fmtNum(tpPrice)} agar net profit minimal ${fmtRp(targetAmount)}.`
     };
   }
 
-  if (input.allocationMode === 'sl_risk') {
+  if (mode === 'sl_risk') {
+    if (input.autoAmount <= 0) throw new Error('Risiko Maksimal wajib diisi untuk menghitung position size dari SL.');
+
+    if (input.slMode === 'percent') {
+      if (input.slParam <= 0) throw new Error('Persentase SL wajib lebih besar dari 0.');
+      const maxAllocation = Math.floor(input.autoAmount / (input.slParam / 100));
+      let lots = Math.floor(maxAllocation / costPerLot);
+      if (lots < 1) throw new Error('Batas risiko terlalu kecil. Nilainya belum cukup untuk membeli 1 lot pada persentase SL tersebut.');
+
+      const actualLossForLots = (lotCount) => {
+        const buy = buyCostAt(input.entryPrice, lotCount, buyFeeRate);
+        const targetLoss = Math.round(buy.totalCost * input.slParam / 100);
+        const sl = findSL(input.entryPrice, buy.shares, buy.totalCost, targetLoss, sellFeeRate, taxRate);
+        return sl.netLoss;
+      };
+
+      while (lots > 0 && actualLossForLots(lots) > input.autoAmount) lots--;
+      if (lots < 1) throw new Error('Batas risiko terlalu kecil setelah pembulatan fraksi harga dan fee. Minimal belum cukup untuk 1 lot.');
+
+      return {
+        lots,
+        basis: `Position size dicari dari risiko maksimal ${fmtRp(input.autoAmount)}`,
+        note: `Position size dibatasi agar risiko bersih setelah fraksi harga dan fee tidak melewati ${fmtRp(input.autoAmount)}.`
+      };
+    }
+
     const slPrice = priceFromSLMode(input);
-    if (slPrice >= input.entryPrice) throw new Error('Harga SL dari mode auto harus berada di bawah harga entry.');
+    if (slPrice >= input.entryPrice) throw new Error('Harga SL untuk position sizing otomatis harus berada di bawah harga entry.');
 
     const lossForLots = (lotCount) => {
       const buy = buyCostAt(input.entryPrice, lotCount, buyFeeRate);
@@ -315,12 +379,12 @@ function estimateAutoLots(input, buyFeeRate, sellFeeRate, taxRate) {
     const perLotLoss = lossForLots(1);
     if (perLotLoss <= 0) throw new Error('SL tidak menghasilkan risiko bersih yang valid.');
     const lots = Math.floor(input.autoAmount / perLotLoss);
-    if (lots < 1) throw new Error('Risiko SL terlalu kecil. Minimal belum cukup untuk membeli 1 lot pada jarak SL tersebut.');
+    if (lots < 1) throw new Error('Batas risiko terlalu kecil. Nilainya belum cukup untuk membeli 1 lot pada jarak SL tersebut.');
 
     return {
       lots,
-      basis: `Auto dari risiko SL ${fmtRp(input.autoAmount)}`,
-      note: `Alokasi dihitung dari entry ${fmtNum(input.entryPrice)} dan SL ${fmtNum(slPrice)} agar loss bersih tidak melewati ${fmtRp(input.autoAmount)}.`
+      basis: `Position size dicari dari risiko maksimal ${fmtRp(input.autoAmount)}`,
+      note: `Position size dihitung dari entry ${fmtNum(input.entryPrice)} dan SL ${fmtNum(slPrice)} agar loss bersih tidak melewati ${fmtRp(input.autoAmount)}.`
     };
   }
 
@@ -328,12 +392,13 @@ function estimateAutoLots(input, buyFeeRate, sellFeeRate, taxRate) {
 }
 
 function calculateLotsAndAllocation(input, buyFeeRate, sellFeeRate, taxRate) {
-  const autoPlan = estimateAutoLots(input, buyFeeRate, sellFeeRate, taxRate);
+  const forcedAutoMode = shouldAutoFromProfit(input) ? 'tp_profit' : null;
+  const autoPlan = estimateAutoLots(input, buyFeeRate, sellFeeRate, taxRate, forcedAutoMode);
   if (autoPlan) {
     const buy = buyCostAt(input.entryPrice, autoPlan.lots, buyFeeRate);
     const allocation = buy.totalCost;
     if (input.totalCapital > 0 && allocation > input.totalCapital) {
-      throw new Error(`Auto alokasi menghasilkan modal terpakai ${fmtRp(allocation)}, lebih besar dari total modal ${fmtRp(input.totalCapital)}.`);
+      throw new Error(`Position sizing otomatis menghasilkan kebutuhan dana beli ${fmtRp(allocation)}, lebih besar dari dana trading tersedia ${fmtRp(input.totalCapital)}.`);
     }
     return { lots: autoPlan.lots, allocation, allocationBasis: autoPlan.basis, allocationNote: autoPlan.note, autoPlan };
   }
@@ -343,35 +408,39 @@ function calculateLotsAndAllocation(input, buyFeeRate, sellFeeRate, taxRate) {
     const buy = buyCostAt(input.entryPrice, lots, buyFeeRate);
     const allocation = input.allocation > 0 ? input.allocation : buy.totalCost;
     if (input.totalCapital > 0 && buy.totalCost > input.totalCapital) {
-      throw new Error(`Modal terpakai ${fmtRp(buy.totalCost)} lebih besar dari total modal ${fmtRp(input.totalCapital)}.`);
+      throw new Error(`Kebutuhan dana beli ${fmtRp(buy.totalCost)} lebih besar dari dana trading tersedia ${fmtRp(input.totalCapital)}.`);
     }
     return {
       lots,
       allocation,
-      allocationBasis: input.allocation > 0 ? 'Lot manual + alokasi manual' : 'Lot manual tanpa alokasi',
-      allocationNote: input.allocation > 0 ? 'Lot mengikuti input manual, sisa alokasi dihitung dari alokasi yang diisi.' : 'Alokasi otomatis disetarakan dengan modal terpakai karena alokasi kosong.',
+      allocationBasis: input.allocation > 0 ? 'Lot manual + plafon posisi manual' : 'Lot manual tanpa plafon posisi',
+      allocationNote: input.allocation > 0 ? 'Lot mengikuti input manual, sisa plafon dihitung dari position size yang diisi.' : 'Position size otomatis disetarakan dengan kebutuhan dana beli karena plafon posisi kosong.',
       autoPlan: null
     };
   }
 
-  const lots = Math.floor(input.allocation / (input.entryPrice * LOT_SIZE * (1 + buyFeeRate)));
-  return { lots, allocation: input.allocation, allocationBasis: 'Alokasi manual lama', allocationNote: 'Lot dihitung dari alokasi per trade seperti versi sebelumnya.', autoPlan: null };
+  if (input.allocation > 0) {
+    const lots = Math.floor(input.allocation / (input.entryPrice * LOT_SIZE * (1 + buyFeeRate)));
+    return { lots, allocation: input.allocation, allocationBasis: 'Plafon posisi manual', allocationNote: 'Lot dihitung dari plafon posisi seperti versi sebelumnya.', autoPlan: null };
+  }
+
+  throw new Error('Position size belum bisa dihitung. Isi plafon posisi, isi lot manual, atau isi Target Net Profit serta Jenis TP tick/harga/persentase untuk mencari kebutuhan dana beli.');
 }
 
 function calculateTP(input, shares, totalCost, allocation, sellFeeRate, taxRate) {
   if (input.tpMode === 'nominal') {
     const targetProfit = input.tpParam > 0 ? input.tpParam : input.targetProfit;
-    if (targetProfit <= 0) throw new Error('Target profit bersih wajib diisi untuk mode TP nominal.');
+    if (targetProfit <= 0) throw new Error('Target Net Profit wajib diisi untuk TP berbasis Rupiah.');
     const tp = findTP(input.entryPrice, shares, totalCost, targetProfit, sellFeeRate, taxRate);
-    return { ...tp, targetProfit, modeLabel: 'TP nominal Rp' };
+    return { ...tp, targetProfit, modeLabel: 'TP target net profit' };
   }
 
   if (input.tpMode === 'percent') {
-    if (allocation <= 0) throw new Error('Alokasi wajib tersedia untuk TP persen dari alokasi.');
+    if (allocation <= 0) throw new Error('Position size wajib tersedia untuk TP persentase.');
     if (input.tpParam <= 0) throw new Error('Nilai TP persen wajib lebih besar dari 0.');
     const targetProfit = Math.round(allocation * input.tpParam / 100);
     const tp = findTP(input.entryPrice, shares, totalCost, targetProfit, sellFeeRate, taxRate);
-    return { ...tp, targetProfit, modeLabel: `TP ${fmtPct(input.tpParam)} alokasi` };
+    return { ...tp, targetProfit, modeLabel: `TP ${fmtPct(input.tpParam)} position size` };
   }
 
   if (input.tpMode === 'tick') {
@@ -379,7 +448,7 @@ function calculateTP(input, shares, totalCost, allocation, sellFeeRate, taxRate)
     if (price <= input.entryPrice) throw new Error('Harga TP harus lebih tinggi dari entry.');
     const sell = sellAt(price, shares, sellFeeRate, taxRate);
     const netProfit = sell.net - totalCost;
-    if (netProfit <= 0) throw new Error('TP tick terlalu dekat. Profit bersih masih nol atau negatif setelah fee.');
+    if (netProfit <= 0) throw new Error('Jarak TP tick terlalu dekat. Net profit masih nol atau negatif setelah fee.');
     return { ...sell, netProfit, targetProfit: netProfit, modeLabel: `TP ${Math.floor(input.tpParam)} tick` };
   }
 
@@ -388,7 +457,7 @@ function calculateTP(input, shares, totalCost, allocation, sellFeeRate, taxRate)
     if (price <= input.entryPrice) throw new Error('Harga TP harus lebih tinggi dari entry.');
     const sell = sellAt(price, shares, sellFeeRate, taxRate);
     const netProfit = sell.net - totalCost;
-    if (netProfit <= 0) throw new Error('Harga TP terlalu dekat. Profit bersih masih nol atau negatif setelah fee.');
+    if (netProfit <= 0) throw new Error('Harga TP terlalu dekat. Net profit masih nol atau negatif setelah fee.');
     return { ...sell, netProfit, targetProfit: netProfit, modeLabel: `TP harga ${fmtNum(price)}` };
   }
 
@@ -397,25 +466,25 @@ function calculateTP(input, shares, totalCost, allocation, sellFeeRate, taxRate)
 
 function calculateSL(input, shares, totalCost, allocation, sellFeeRate, taxRate, tpResult) {
   if (input.slMode === 'rr') {
-    if (input.rrRatio <= 0) throw new Error('Reward per 1 risk harus lebih besar dari 0.');
+    if (input.rrRatio <= 0) throw new Error('Rasio reward terhadap risk harus lebih besar dari 0.');
     const targetLoss = tpResult.targetProfit / input.rrRatio;
     const sl = findSL(input.entryPrice, shares, totalCost, targetLoss, sellFeeRate, taxRate);
-    return { ...sl, targetLoss, modeLabel: `SL R:R 1:${input.rrRatio.toLocaleString('id-ID', { maximumFractionDigits: 2 })}` };
+    return { ...sl, targetLoss, modeLabel: `SL risk-reward 1:${input.rrRatio.toLocaleString('id-ID', { maximumFractionDigits: 2 })}` };
   }
 
   if (input.slMode === 'nominal') {
-    if (input.slParam <= 0) throw new Error('Nilai SL nominal wajib lebih besar dari 0.');
+    if (input.slParam <= 0) throw new Error('Nilai SL risiko nominal wajib lebih besar dari 0.');
     const targetLoss = input.slParam;
     const sl = findSL(input.entryPrice, shares, totalCost, targetLoss, sellFeeRate, taxRate);
-    return { ...sl, targetLoss, modeLabel: `SL nominal ${fmtRp(targetLoss)}` };
+    return { ...sl, targetLoss, modeLabel: `SL risiko nominal ${fmtRp(targetLoss)}` };
   }
 
   if (input.slMode === 'percent') {
-    if (allocation <= 0) throw new Error('Alokasi wajib tersedia untuk SL persen dari alokasi.');
+    if (allocation <= 0) throw new Error('Position size wajib tersedia untuk SL persentase.');
     if (input.slParam <= 0) throw new Error('Nilai SL persen wajib lebih besar dari 0.');
     const targetLoss = Math.round(allocation * input.slParam / 100);
     const sl = findSL(input.entryPrice, shares, totalCost, targetLoss, sellFeeRate, taxRate);
-    return { ...sl, targetLoss, modeLabel: `SL ${fmtPct(input.slParam)} alokasi` };
+    return { ...sl, targetLoss, modeLabel: `SL ${fmtPct(input.slParam)} position size` };
   }
 
   if (input.slMode === 'tick') {
@@ -490,17 +559,17 @@ function calculate() {
 
   const lotPlan = calculateLotsAndAllocation(input, buyFeeRate, sellFeeRate, taxRate);
   const lots = lotPlan.lots;
-  if (lots < 1) throw new Error('Jumlah lot 0. Naikkan alokasi, turunkan harga entry, atau gunakan auto alokasi.');
+  if (lots < 1) throw new Error('Jumlah lot 0. Naikkan plafon posisi, turunkan harga entry, atau gunakan position sizing otomatis.');
 
   const { shares, grossBuy, buyFee, totalCost } = buyCostAt(input.entryPrice, lots, buyFeeRate);
   const allocation = lotPlan.allocation > 0 ? lotPlan.allocation : totalCost;
 
   if (input.totalCapital > 0 && totalCost > input.totalCapital) {
-    throw new Error(`Modal terpakai ${fmtRp(totalCost)} lebih besar dari total modal ${fmtRp(input.totalCapital)}.`);
+    throw new Error(`Kebutuhan dana beli ${fmtRp(totalCost)} lebih besar dari dana trading tersedia ${fmtRp(input.totalCapital)}.`);
   }
 
   if (input.allocationMode === 'manual' && input.allocation > 0 && totalCost > input.allocation) {
-    throw new Error('Modal terpakai melebihi alokasi. Kurangi lot manual atau naikkan alokasi.');
+    throw new Error('Kebutuhan dana beli melebihi alokasi. Kurangi lot manual atau naikkan alokasi.');
   }
 
   const remainingAllocation = allocation - totalCost;
@@ -549,7 +618,7 @@ function renderAutoReject(result) {
   setMetricState('insTPAra', ar.tpOk);
   setMetricState('insSLArb', ar.slOk);
 
-  const entryText = ar.entryOk ? 'Entry masih berada dalam rentang ARA/ARB.' : 'Entry berada di luar rentang ARA/ARB dari close kemarin.';
+  const entryText = ar.entryOk ? 'Entry masih berada dalam rentang ARA/ARB harian.' : 'Entry berada di luar rentang ARA/ARB berdasarkan harga penutupan hari sebelumnya.';
   const tpRoom = ar.tpToAraTicks >= 0 ? `sisa ${fmtNum(ar.tpToAraTicks)} tick ke ARA` : `melewati ARA ${fmtNum(Math.abs(ar.tpToAraTicks))} tick`;
   const slRoom = ar.slToArbTicks >= 0 ? `sisa ${fmtNum(ar.slToArbTicks)} tick ke ARB` : `melewati ARB ${fmtNum(Math.abs(ar.slToArbTicks))} tick`;
   setText(
@@ -567,7 +636,7 @@ function render(result) {
   setText('outRemain', fmtRp(result.remainingAllocation));
   setText('outAllocBasis', result.allocationBasis);
   setText('outModeInfo', `${result.tp.modeLabel} · ${result.sl.modeLabel}`);
-  setText('outRR', result.slMode === 'rr' ? `R:R 1:${result.rrRatio.toLocaleString('id-ID', { maximumFractionDigits: 2 })}` : `TP/SL manual · risk ${fmtRp(result.sl.targetLoss)}`);
+  setText('outRR', result.slMode === 'rr' ? `R:R 1:${result.rrRatio.toLocaleString('id-ID', { maximumFractionDigits: 2 })}` : `TP/SL manual · risiko ${fmtRp(result.sl.targetLoss)}`);
 
   setText('outTP', `TP ${fmtNum(result.tp.price)}`);
   setText('outTPTicks', result.tpTicks);
@@ -602,11 +671,11 @@ function render(result) {
 
   let warning = result.slTicks <= 3
     ? `Peringatan: SL hanya ${result.slTicks} tick dari entry. Jarak ini sangat dekat.`
-    : `Target profit bersih aktual ${fmtRp(result.tp.netProfit)}. Status SL: ${result.slStatus}.`;
+    : `Net profit aktual ${fmtRp(result.tp.netProfit)}. Kualitas jarak SL: ${result.slStatus}.`;
 
   if (result.allocationNote) warning += ` ${result.allocationNote}`;
   if (result.autoReject && (!result.autoReject.tpOk || !result.autoReject.slOk || !result.autoReject.entryOk)) {
-    warning += ' Periksa kembali TP/SL karena ada posisi yang keluar dari batas ARA/ARB harian.';
+    warning += ' Periksa kembali TP/SL karena ada posisi yang keluar dari rentang ARA/ARB harian.';
   }
   setText('resultNote', warning);
 }
@@ -660,15 +729,15 @@ function copyResult() {
   if (!lastResult) return;
   const r = lastResult;
   const lines = [
-    `Kalkulator Saham ${r.symbol ? '- ' + r.symbol : ''}`.trim(),
+    `Kalkulator Position Sizing Saham ${r.symbol ? '- ' + r.symbol : ''}`.trim(),
     `Entry: Rp${fmtNum(r.entryPrice)}`,
     `Lot: ${fmtNum(r.lots)} lot`,
     `TP: Rp${fmtNum(r.tp.price)} | ${r.tpTicks} tick | ${fmtPct(r.tpPct)} | Profit bersih ${fmtRp(r.tp.netProfit)} | ${r.tp.modeLabel}`,
     `SL: Rp${fmtNum(r.sl.price)} | ${r.slTicks} tick | ${fmtPct(r.slPct)} | Loss bersih ${fmtRp(r.sl.netLoss)} | ${r.sl.modeLabel}`,
-    `Modal terpakai: ${fmtRp(r.totalCost)}`,
-    `Sisa alokasi: ${fmtRp(r.remainingAllocation)}`,
-    `Basis alokasi: ${r.allocationBasis}`,
-    `Status SL: ${r.slStatus}`
+    `Kebutuhan dana beli: ${fmtRp(r.totalCost)}`,
+    `Sisa plafon posisi: ${fmtRp(r.remainingAllocation)}`,
+    `Metode sizing: ${r.allocationBasis}`,
+    `Kualitas jarak SL: ${r.slStatus}`
   ];
 
   if (r.autoReject) {
@@ -688,13 +757,13 @@ function updateModeHelpers() {
   const tpUnits = { nominal: 'Rp', percent: '%', tick: 'tick', price: 'Rp' };
   const slUnits = { rr: 'R:R', nominal: 'Rp', percent: '%', tick: 'tick', price: 'Rp' };
   const tpPlaceholders = {
-    nominal: 'Kosongkan untuk target lama',
+    nominal: 'Boleh kosong jika target net profit diisi',
     percent: '2,5',
     tick: '5',
     price: '2.500'
   };
   const slPlaceholders = {
-    rr: 'Kosongkan untuk R:R',
+    rr: 'Kosongkan jika memakai R:R',
     nominal: '1.000.000',
     percent: '1',
     tick: '3',

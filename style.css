@@ -33,3 +33,29 @@ button,input{font:inherit}button{cursor:pointer}.app{width:min(100%,520px);min-h
 .update-banner span{display:block;color:#dbe7f5;font-size:12px;line-height:1.35}
 .update-banner .small-btn{white-space:nowrap;background:rgba(245,193,25,.12)}
 @media(max-width:430px){.header{align-items:flex-start}.header-actions{width:100%;margin-left:60px;justify-content:flex-start}.update-banner{align-items:flex-start;flex-direction:column}.update-banner .small-btn{width:100%}}
+
+/* Tambahan v1.4.1: layout TP/SL dibuat berdekatan dan lebih rapi */
+.app{width:min(100%,640px)}
+.stacked-head{align-items:flex-start;margin-bottom:10px}
+.stacked-head p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}
+.exit-section{background:linear-gradient(180deg,rgba(12,24,40,.9),rgba(8,15,27,.82))}
+.sizing-mode{margin-bottom:12px}
+.exit-stack{display:grid;gap:12px}
+.exit-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(2,7,14,.32);padding:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.exit-card.take-profit{border-color:rgba(79,211,124,.28);background:linear-gradient(180deg,rgba(79,211,124,.08),rgba(2,7,14,.28))}
+.exit-card.stop-loss{border-color:rgba(255,98,87,.26);background:linear-gradient(180deg,rgba(255,98,87,.07),rgba(2,7,14,.28))}
+.exit-title{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:11px}
+.exit-title strong{display:block;font-size:15px;color:#f8fbff}
+.exit-title span{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35}
+.exit-title em{font-style:normal;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 8px;white-space:nowrap}
+.take-profit .exit-title em{color:var(--green);background:rgba(79,211,124,.1)}
+.stop-loss .exit-title em{color:var(--red);background:rgba(255,98,87,.1)}
+.exit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+.exit-grid .field{margin-bottom:0}
+.exit-grid .wide{grid-column:1/-1}
+.rr-field{border-top:1px dashed rgba(255,255,255,.12);padding-top:10px}
+.mode-help{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.mode-help span{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);border-radius:12px;padding:7px 8px;color:#cbd7e7;font-size:11px;line-height:1.25;text-align:center}
+.mode-help b{display:block;color:var(--yellow);font-size:11px;margin-bottom:2px}
+@media(max-width:560px){.app{width:min(100%,520px)}.exit-grid{grid-template-columns:1fr}.mode-help{grid-template-columns:1fr 1fr}.exit-title{align-items:flex-start}.exit-title em{margin-top:1px}}
+@media(max-width:380px){.mode-help{grid-template-columns:1fr}.exit-card{padding:11px}}
